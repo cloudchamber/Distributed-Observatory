@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Distributed Observatory</string>
+    <string name="version">0.1</string>
+    <string name="data_dir">distobs</string>    
+</resources>
