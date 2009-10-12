@@ -16,7 +16,7 @@
         		<category android:name="android.intent.category.HOME"></category>
         	</intent-filter>
         </receiver>
-        <activity android:name=".DistObsCamera"></activity>        
+        <activity android:name=".DataAcq"></activity>        
     </application>
 
 	<uses-sdk android:minSdkVersion="3" ></uses-sdk>

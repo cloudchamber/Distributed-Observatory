@@ -22,20 +22,14 @@ package org.distobs.distobs;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.util.Log;
 
 /**
  * Starts Distributed Observatory on boot.
  * @author kenny
  */
 public class BootReceiver extends BroadcastReceiver {
-	private static final String TAG = "DistObsService";	
-	
 	@Override
 	public void onReceive(Context context, Intent intent) {
-		
-		Log.v(TAG, "Action="+intent.getAction());
-		Intent distObsIntent = new Intent(context, DistObs.class);
-		context.startService(distObsIntent);
+		context.startService(new Intent(context, DistObs.class));
 	}
 }

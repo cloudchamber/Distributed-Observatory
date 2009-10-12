@@ -20,250 +20,199 @@
 package org.distobs.distobs;
 
 import java.io.BufferedReader;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.URL;
 
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.res.Resources;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.wifi.WifiManager;
 import android.os.Environment;
-import android.os.Handler;
 import android.os.IBinder;
 import android.util.Log;
 
 
 /**
- * 
+ * Distributed Observatory (distobs.org)
+ * @version 0.1
  * @author kenny
  *
+ * Description:
+ * The Distributed Observatory service monitors various aspects on the phone's state (network connectivity, 
+ * battery charging, etc...), and performs appropriate actions (data acquistion, data transfer, etc...).
  *
  *
- *
- *
+ * Data formating:
  * It is expected that the data format will change with new versions of the client 
  * software.  Thus, during data upload, the client transmits the version of the 
  * software.
  * 
- * Other sensors (temp, acc, mag, sound level, etc..) 
- * 
  * Format v0.1
- * seqIDstr			, picNum, picStartTime	, picFinishTime	, latitude	, longitude	, locationMethod	, temp	, accx	, accy	, accz	, magx	, magy	, magz
- * 20090921T002100  , 23	, 12341983274	, 12341983999	, 37.1324	, 142.1412	, GPS				, 25	, 0		, 1		, 0		, 0		, 1		, 0
+ * seqIDstr, 		picNum,		picStartTime,	picFinishTime, 	gpsFixTime,		gpsLatitude,	gpsLongitude,	gpsAltitude,	networkFixTime,		networkLatitude, 	networkLongitude, 	accx, 	accy,	accz, 	magx,	magy,	magz,	temp
+ * 20090921T002100, 23, 		12341983274, 	12341983999, 	12341000000, 	37.1324, 		-142.1412, 		0,				12341000000, 		37.2,				-142.2,				9.81, 	0,		0,		1, 		0,		0,		37
  *
  *
  *
  *
  * TODO: 
  * 0) Take data!
- * 1) Fix bugs!
- * 3) Check incoming call -- caused an uncaught exception 
- * 5) figure out gps on my phone
- * 6) make webpage (reg. distobs.org com net)
- * 8) figure out security/privacy/anti-cheating measures
+ * 1) Check incoming call -- caused an uncaught exception 
+ * 3) figure out security/privacy/anti-cheating measures
+ * 4) make options menu (allows control over when it turns on, what data it sends, etc...)
+ * 5) spruce up data display
+ * 6) Disable camera button.
+ * 
  */
 
 public class DistObs extends Service {
 
 	private static final String TAG = "DistObsService";	
-    private boolean hasData = false;
-
+	
+	private static long waitTimeAfterStart = 6000; // ms
+	private static long waitTimeAfterPlugged = 2000; // ms
+	
+	private boolean alwaysOn = true;
+	public boolean isActivityRunning = false;
+	private long serviceStartTime = 0;
+	private DataSend ds;
+	
+	
     /**
-     * 
+     * Gets the directory to store all the data in.  This is usually /sdcard/distobs/.
      * @return	The directory to store the data in.
      */
+    public static File getDataDir(Context c) {
+    	return new File(Environment.getExternalStorageDirectory().getPath() + "/" + c.getResources().getText(R.string.data_dir));
+    }
+    
     public File getDataDir() {
-   		Log.v(TAG, Environment.getExternalStorageDirectory().getPath() + "/" + getResources().getText(R.string.data_dir));
-    	return new File(Environment.getExternalStorageDirectory().getPath() + "/" + getResources().getText(R.string.data_dir));
+    	return getDataDir(this);
     }
     
     
     /**
-     * 
+     * Each client has a unique ID assigned to it.  This ID is assigned the first time the server is contacted.
+     * @return	The integer ID, -1 on failure.
      */
-	BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
-		private static final String TAG = "BatteryReceiver";	
-		public void onReceive(Context context, Intent intent) {
-			Log.v(TAG, "Battery receiver intent = "+intent.getExtras().describeContents());						
-			if ( intent.getIntExtra("plugged", -1) > 0 ) {
-				Log.v(TAG, "Plugged");
-				Intent in = new Intent(context, DistObsCamera.class);
-				in.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-				startActivity(in);
-			}
-			else {
-				Log.v(TAG, "Unplugged");								
-				sendBroadcast(new Intent("STOP"));				
-			}			 
-		}
-	};
-	
+    public static int getID(Context c) {
+    	try {
+			Log.v(TAG, "trying to open config");
+			FileInputStream fis = c.openFileInput("config");
+			InputStreamReader isr = new InputStreamReader(fis);
+			BufferedReader br = new BufferedReader(isr);
+			String idStr = br.readLine();
+			Log.v(TAG, "buf="+idStr);
+			return Integer.parseInt(idStr);
+		} catch (NumberFormatException e) {
+			e.printStackTrace();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}    		
+		
+    	return -1;
+    }
+    
+    public int getID() {
+    	return getID(this);
+    }
+    
+
+	/**
+	 * Starts the camera/data acquisition. (Non-blocking)
+	 * Does nothing if it is already started (FLAG_ACTIVITY_NEW_TASK)
+	 */
+	public void startDataAcq() {
+		Intent in = new  Intent(this, DataAcq.class);
+		in.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+		startActivity(in);
+		isActivityRunning = true;
+	}
 	
 	
 	/**
-	 * 
+	 * Stops the camera from taking pictures. (Non-blocking)
+	 */
+	public void stopDataAcq() {
+		sendBroadcast(new Intent("STOP"));
+		isActivityRunning = false;
+	}
+	
+	
+    /**
+     * Data acquisition starts a short period after the battery is plugged in.
+     * This method listens for changes in the battery charging state and starts or
+     * stops data acquisition.
+     */
+	BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
+		private static final String TAG = "BatteryReceiver";	
+		
+		public void onReceive(Context context, Intent intent) {
+			if ( intent.getIntExtra("plugged", -1) > 0 ) {
+				Log.v(TAG, "Plugged");
+				// wait at least a minute after startup before a "plugged" signal
+				// starts data acq.
+				if (System.currentTimeMillis()-serviceStartTime > waitTimeAfterStart) {
+					// Wait a fixed amount of time before starting data acquisition.
+					try {
+						Thread.sleep(waitTimeAfterPlugged);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					}				
+					
+					startDataAcq();
+				}
+			}
+			else {
+				Log.v(TAG, "Unplugged");
+				if (!alwaysOn)
+					stopDataAcq();				
+			}			 
+		}
+	};
+
+	
+	/**
+	 * Data transfer occurs whenever there is data and an Internet connection.  This
+	 * method listens for changes in network connectivity.
 	 */
 	BroadcastReceiver networkReceiver = new BroadcastReceiver() {
 		private static final String TAG = "NetworkReceiver";	
 		private ConnectivityManager cm;
-		public void onReceive(Context context, Intent intent) {			
-			Log.v(TAG, "Network receiver intent = "+intent .getExtras().getParcelable(WifiManager.EXTRA_NETWORK_INFO));
+		
+		public void onReceive(Context context, Intent intent) {
 			cm = (ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);
-
-			if ( cm.getActiveNetworkInfo().getState() == NetworkInfo.State.CONNECTED ) { 
-				Log.v(TAG, "network connected");
-								
-				transferData();
-				if (hasData) {
-					//stopDataAcq();
-					//transferData();
-					//deleteData();
-					//startDataAcq();
-				}
-			}
-			else {
-				Log.v(TAG, "network disconnected");
-			}
-		}
-		
-		private void transferData() {
-			boolean success;
-			
-			if (getDataDir().exists()) {
-				String[] fileList = getDataDir().list();
-				for (int i=0; i<fileList.length; i++) {
-					Log.v(TAG, "Trying to transfer " + fileList[i]);
-					success = transferFile(fileList[i]);
-					
-					if (success) {
-						Log.v(TAG, "Succeeded.  Trying to delete local copy");
-						File transferedFile = new File(getDataDir() + "/" + fileList[i]);
-						transferedFile.delete();
-					}
-					else
-						break;
+			if (cm != null) {
+				NetworkInfo ni = cm.getActiveNetworkInfo();
+	
+				if ( ni != null && ni.getState() == NetworkInfo.State.CONNECTED ) { 
+					Log.v(TAG, "network connected");
+					ds.start();
 				}
 			}
 		}
-		
-		private boolean transferFile(String filename) {
-			HttpURLConnection conn = null;
-            DataOutputStream dos = null;
-            DataInputStream inStream = null;
-            
-            String exsistingFileName = getDataDir().toString() + "/" + filename;
-            String serverFileName = "ID000-" + filename;
-            String lineEnd = "\r\n";
-            String twoHyphens = "--";
-            String boundary = "*****";
-            int bytesRead, bytesAvailable, bufferSize;
-            byte[] buffer;
-            int maxBufferSize = 1*1024*1024;
-            String responseFromServer = "";
-            String urlString = "http://192.168.0.2/upload.php";
-
-
-            // client request
-            try {
-	            Log.v(TAG, "Start file upload");
-	            FileInputStream fileInputStream = new FileInputStream(new File(exsistingFileName));
-	            URL url = new URL(urlString);
-
-	            conn = (HttpURLConnection) url.openConnection();
-	            Log.v(TAG, "conn="+conn.toString());
-	
-	            // Set-up connection 
-	            conn.setDoInput(true);
-	            conn.setDoOutput(true);
-	            conn.setUseCaches(false);
-	            conn.setRequestMethod("POST");
-	            conn.setRequestProperty("Connection", "Keep-Alive");
-	            conn.setRequestProperty("Content-Type", "multipart/form-data;boundary="+boundary);
-	
-	            dos = new DataOutputStream( conn.getOutputStream() );
-	            dos.writeBytes(twoHyphens + boundary + lineEnd);
-	            dos.writeBytes("Content-Disposition: form-data; name=\"uploadedfile\";filename=\"" + serverFileName +"\"" + lineEnd);
-	            dos.writeBytes(lineEnd);
-	
-	            // create a buffer of maximum size
-	            bytesAvailable = fileInputStream.available();
-	            bufferSize = Math.min(bytesAvailable, maxBufferSize);
-	            buffer = new byte[bufferSize];
-	
-	            // read file and write it into form...
-	            bytesRead = fileInputStream.read(buffer, 0, bufferSize);
-	            while (bytesRead > 0) {
-	            	Log.v(TAG, "here");
-		            dos.write(buffer, 0, bufferSize);
-		            bytesAvailable = fileInputStream.available();
-		            bufferSize = Math.min(bytesAvailable, maxBufferSize);
-		            bytesRead = fileInputStream.read(buffer, 0, bufferSize);
-	            }
-	
-	            // send multipart form data necesssary after file data...
-	            dos.writeBytes(lineEnd);
-	            dos.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
-	            Log.v(TAG, "dos="+dos.toString());
-	            
-	            // close streams
-	            fileInputStream.close();
-	            dos.flush();
-	            dos.close();	
-
-	            Log.v(TAG, "File was uploaded");
-            } catch (MalformedURLException ex) {
-            } catch (IOException ioe) {
-            }
-
-            //------------------ read the SERVER RESPONSE
-            try {
-	            Log.v(TAG, "Reading response");            	
-            	BufferedReader rd = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                String line;
-                while ((line = rd.readLine()) != null) {
-    	            Log.v(TAG, "resp="+line);
-                }
-                rd.close();
-	            Log.v(TAG, "Done reading response");            	
-            } catch (Exception e) {
-            }	
-            
-            return true;
-			
-		}
-		
-		
 	};
 
-
+		
 	/**
-	 * 
+	 * At the moment, nothing binds to this service.
 	 */
 	@Override
 	public IBinder onBind(Intent intent) {
-		// TODO Auto-generated method stub
 		return null;
 	}
 	
 	
 	/**
-	 * 
+	 * Nothing yet.
 	 */
 	@Override
 	public void onStart(Intent intent, int startId) {
@@ -274,21 +223,24 @@ public class DistObs extends Service {
 
 	
 	/**
-	 * 
+	 * Registers the various Receivers.
 	 */
 	@Override
 	public void onCreate() {
 		super.onCreate();		
 		Log.v(TAG, "Distributed observatory service created");	
 		
+		serviceStartTime = System.currentTimeMillis();
+		
 		registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
 		registerReceiver(networkReceiver, new IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION));
-
+		
+		ds = new DataSend(this);
 	}
 
 	
 	/**
-	 * 
+	 * Unregisters the various Receivers.
 	 */
 	@Override
 	public void onDestroy() {
@@ -296,21 +248,17 @@ public class DistObs extends Service {
 		Log.v(TAG, "Distributed observatory service destroyed");
 		
 		unregisterReceiver(batteryReceiver);
-		unregisterReceiver(networkReceiver);		
+		unregisterReceiver(networkReceiver);
+		
+		ds = null;
 	}
 
 	
 	/**
-	 * 
+	 * Nothing yet.
 	 */
 	@Override
 	public void onLowMemory() {
 		super.onLowMemory();
 	}
 }
-
-
-
-
-
-

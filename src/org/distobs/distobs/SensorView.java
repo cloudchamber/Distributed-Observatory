@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2009 Kenneth Jensen
+ *  Copyright (c) 2009 Kenneth Jensen
  * 
  * This file is part of Distributed-Observatory.
  *
@@ -23,15 +23,11 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.util.Calendar;
 import java.util.List;
 
-import android.app.Activity;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -43,170 +39,44 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.hardware.Camera.PictureCallback;
 import android.location.Location;
+import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.os.Bundle;
-import android.os.Environment;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.ViewGroup;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-
-
-/**
- * 
- * @author kenny
- *
- */
-public class DistObsCamera extends Activity {
-    private Preview mPreview;
-    private TextView mTextView;
-    private LinearLayout ll;
-    private static final String TAG = "DistObsCamera";
-    private TestThread thread;
-    private boolean isRunning;
-
-
-    /**
-     * 
-     */
-	BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
-		private static final String TAG = "BroadcastReceiver";	
-		public void onReceive(Context context, Intent intent) {
-			Log.v(TAG, "Broadcast receiver intent = "+intent.getAction());				
-			finish();
-		}
-	};
-	
-	
-	/**
-	 * 
-	 * @author kenny
-	 *
-	 */
-    public class TestThread extends Thread {
-    	public TestThread() {    		
-    	}
-    	
-    	public void run() {    		
-            Log.v(TAG, "running!");
-
-            isRunning = true;
-    		mPreview.initCamera();
-    		while (isRunning) {
-    			Log.v(TAG, "Start loop"); 
-
-    			try {
-	        		mPreview.setUpPicture();
-	        		mPreview.gatherData();
-	        		
-	        		mTextView.setText("numEvents=" + mPreview.numEvents + "\n" + mPreview.lastEventData.toString("\n"));
-	        		mTextView.postInvalidate();
-	        		mPreview.postInvalidate();
-		    		ll.postInvalidate();
-	        		
-	        		mPreview.takePicture();
-	                mPreview.analyzePicture();
-		    		while (!mPreview.done);
-    			}
-    			catch (Exception e) {
-    				
-    			}
-    		}
-    	}
-    	
-    	public void finish() {
-    		Log.v(TAG, "finishing");
-    		
-    		isRunning = false;    		
-    		mPreview.finish();
-    	}
-    }
-	
-	@Override
-	protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);        
-        Log.v(TAG, "DistObsCamera created");
-        
-		registerReceiver(broadcastReceiver, new IntentFilter("STOP"));
-        
-		
-		ll = new LinearLayout(this);
-
-		mTextView = new TextView(this);
-		//mTextView.setMinLines(19);
-		mTextView.setText("TextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\nTextView123456789012345678901234567890\n");
-		
-        mPreview = new Preview(this);
-        
-        ll.addView(mTextView);
-        ll.addView(mPreview);
-        
-        setContentView(ll);
-        
-        thread = new TestThread();
-    }	
-
-	@Override
-	protected void onStart() {
-        super.onStart();
-        Log.v(TAG, "DistObsCamera started");
-        
-        thread.start();
-    }
-	    
-	@Override
-	protected void onStop() {
-        super.onStop();
-        Log.v(TAG, "DistObsCamera stopped");
-        
-        try {
-        	thread.finish();
-        }
-        catch (Exception e) {        	
-        }
-    }
-
-	@Override
-	protected void onDestroy() {
-        super.onDestroy();
-        Log.v(TAG, "DistObsCamera destroyed");
-        unregisterReceiver(broadcastReceiver);
-        mPreview = null;
-        thread = null;
-    }
-
-	@Override
-	protected void onPause() {
-        super.onPause();
-        Log.v(TAG, "DistObsCamera pauseed");
-    }
-
-	@Override
-	protected void onRestart() {
-        super.onRestart();
-        Log.v(TAG, "DistObsCamera restarted");
-    }
-}
+import android.view.View;
 
 
 
 
 /**
+ * SensorView is the view that gathers all the data.  It has to be a View because
+ * the camera needs a SurfaceHolder from the SurfaceView class to operate.
  * 	
  * @author kenny
  *
  */
-class Preview extends SurfaceView {
+public class SensorView extends SurfaceView {
 	
-    SurfaceHolder mHolder;
-    Camera mCamera;    
+    SurfaceHolder h;
+    Camera c;    
     AudioManager am;
+    SensorManager sm;
 
     private static final String TAG = "DistObsCamera";	
+    
+    private static int fastFilterThreshold = 4;
+    private static int fastFilterMinPix = 0;
+    private static int fastFilterMaxPix = 20;
+    private static int slowFilterThreshold = 16;
+    
+    
+    
 
+    public boolean cameraError = false;
     public boolean analysisDone = true;   
     public boolean created = false;
     public boolean done = true;
@@ -215,7 +85,7 @@ class Preview extends SurfaceView {
     public byte[] lastPic = null;
 	private Options bmopt = new Options();
 
-	private long lastStartTime, lastFinishTime, startTime = 0, finishTime = 0;
+	private long lastStartTime, startTime = 0, finishTime = 0;
 	private float accx, accy, accz, magx, magy, magz, temp;
 
 	private LocationManager lm = null; 
@@ -245,29 +115,31 @@ class Preview extends SurfaceView {
 		public float accx, accy, accz, magx, magy, magz, temp;
 		
 		/**
-		 * 
+		 * Makes a comma deliminated string of all the data 
+		 * @return	The comma delimiated string.
 		 */
 		public String toString() {
 			return toString(", ");
-		}
-		
+		}		
 		
 		/**
-		 * 
+		 * Makes a string of all the data with an arbitrary deliminator
 		 * @return
 		 */
 		public String toString(String delim) {
 			String str;
 			
-			str = seqIDstr + delim + startTime + delim + finishTime;
+			str = seqIDstr + delim + picNum + delim + startTime + delim + finishTime;
 			
+			// if no gps location, just returns 0's
 			if (gpsLocation != null)
-				str += delim + gpsLocation.getTime() + delim + gpsLocation.getLongitude() + delim + gpsLocation.getLatitude() + delim + gpsLocation.getAltitude();	
+				str += delim + gpsLocation.getTime() + delim + gpsLocation.getLatitude() + delim + gpsLocation.getLongitude() + delim + gpsLocation.getAltitude();	
 			else
 				str += delim + 0 + delim + 0 + delim + 0 + delim + 0;
 			
+			// if no network location, just return 0's
 			if (networkLocation != null)
-				str +=  delim + networkLocation.getTime() + delim + networkLocation.getLongitude() + delim + networkLocation.getLatitude();
+				str +=  delim + networkLocation.getTime() + delim + networkLocation.getLatitude() + delim + networkLocation.getLongitude();
 			else
 				str += delim + 0 + delim + 0 + delim + 0;
 			
@@ -278,7 +150,7 @@ class Preview extends SurfaceView {
 	
 	
 	/**
-	 * 
+	 * Listens for changes to the accelerometer.
 	 */
     SensorEventListener accEventListener = new SensorEventListener() {
 		@Override
@@ -292,10 +164,9 @@ class Preview extends SurfaceView {
 			accz = event.values[2];			
 		}
     };
-    
-    
+        
     /**
-     * 
+     * Listens for changes to the magnetometer
      */
     SensorEventListener magEventListener = new SensorEventListener() {
 		@Override
@@ -308,11 +179,10 @@ class Preview extends SurfaceView {
 			magy = event.values[1];
 			magz = event.values[2];			
 		}
-    };
-    
+    };    
     
     /**
-     * 
+     * Listens for changes to the temperature sensor.
      */
     SensorEventListener tempEventListener = new SensorEventListener() {
 		@Override
@@ -330,8 +200,23 @@ class Preview extends SurfaceView {
      * 
      * @param context
      */
-    Preview(Context context) {
+    SensorView(Context context) {
         super(context);
+       
+        // Turn camera button off.
+        this.setOnKeyListener(new OnKeyListener(){
+        	@Override
+            public boolean onKey(View v, int keyCode, KeyEvent event){
+                if(event.getAction() == KeyEvent.ACTION_DOWN) {
+                    switch(keyCode) {
+                        case KeyEvent.KEYCODE_CAMERA:
+                            return true;
+                    }
+                }
+                return false;
+            }
+        });
+
         
         // Set up audio manager.  Turn camera sounds off.
         am = (AudioManager)context.getSystemService(Context.AUDIO_SERVICE);        
@@ -340,17 +225,53 @@ class Preview extends SurfaceView {
         // Set up location manager.  Check for GPS/Network location methods
         lm = (LocationManager)context.getSystemService(Context.LOCATION_SERVICE); 
         List<String> pl = lm.getProviders(true);
-        Log.v(TAG, "Num providers = "+pl.size());
+        
         for (int i=0; i<pl.size(); i++) {
-        	Log.v(TAG, "Location provider="+pl.get(i));
-        	if (pl.get(i).compareTo("gps")==0)
+        	if (pl.get(i).compareTo("gps")==0) {
         		hasGPSLocation = true;
-        	else if (pl.get(i).compareTo("network")==0)
+        		// having trouble to get this to update, don't know if this helps
+                lm.requestLocationUpdates("gps", 1000000, 0, 
+                		new LocationListener() {
+							@Override
+							public void onLocationChanged(Location location) {
+							}
+							@Override
+							public void onProviderDisabled(String provider) {
+							}
+							@Override
+							public void onProviderEnabled(String provider) {
+							}
+							@Override
+							public void onStatusChanged(String provider, int status,
+									Bundle extras) {
+							}
+						});
+        	}
+        	else if (pl.get(i).compareTo("network")==0) {
         		hasNetworkLocation = true;
+        		// having trouble to get this to update, don't know if this helps
+                lm.requestLocationUpdates("network", 1000000, 0, 
+                		new LocationListener() {
+							@Override
+							public void onLocationChanged(Location location) {
+							}		
+							@Override
+							public void onProviderDisabled(String provider) {
+							}
+							@Override
+							public void onProviderEnabled(String provider) {
+							}
+							@Override
+							public void onStatusChanged(String provider, int status,
+									Bundle extras) {
+							}
+						});        		
+        	}
         }
+        
                 
         // Set up sensor manager.
-        SensorManager sm = (SensorManager)context.getSystemService(Context.SENSOR_SERVICE);		
+        sm = (SensorManager)context.getSystemService(Context.SENSOR_SERVICE);		
 		List<Sensor> sl = sm.getSensorList(Sensor.TYPE_ALL);
 		for (int i=0; i<sl.size(); i++) {
 			if (sl.get(i).getType() == Sensor.TYPE_ACCELEROMETER)
@@ -361,8 +282,12 @@ class Preview extends SurfaceView {
 				sm.registerListener(tempEventListener, sl.get(i), SensorManager.SENSOR_DELAY_UI);
 		}
 		
-        mHolder = getHolder();
+		// Gets holder
+        h = getHolder();
+        h.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);	// required by Android 1.6
 
+
+        // Gets sequence ID
         Calendar c = Calendar.getInstance();
         lastEventData.seqIDstr = String.format("%04d%02d%02dT%02d%02d%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH), 
         		c.get(Calendar.DAY_OF_MONTH), c.get(Calendar.HOUR), 
@@ -380,30 +305,47 @@ class Preview extends SurfaceView {
     /**
      * Initializes the camera.  Must be called once before any picture taking.
      */
-    public void initCamera() {
-    	if ( mCamera != null )
-    		mCamera.release();
-    	mCamera = Camera.open();
+    public boolean initCamera() {
+    	releaseCamera();
+    	
+    	try {
+    		c = Camera.open();
+        } catch (RuntimeException e) {
+			Log.v(TAG, "Error initializing camera (runtime)");
+			e.printStackTrace();
+			releaseCamera();
+			return false;        	
+        }
+        
+    	if (c==null) {
+    		Log.v(TAG, "Could not open camera");
+    		return false;
+    	}
+    	
         try {
         	Log.v(TAG, "Init. camera");
 
             Camera.Parameters p;
-            p = mCamera.getParameters();
+            p = c.getParameters();
             p.set("antibanding", "off");           
-            p.set("effect", "mono");
+            //p.set("effect", "mono");
             p.set("jpeg-quality", 100);
-            p.set("luma-adjust", 1);
+            //p.set("luma-adjust", 1);
             p.set("nightshot-mode", 1);
             p.set("rotation", 0);
-            p.set("whitebalance", "twilight");
+            //p.set("whitebalance", "twilight");
             p.set("picture-size", "2048x1536");
             p.set("picture-format", "jpeg");
-            mCamera.setParameters(p);
-            mCamera.setPreviewDisplay(mHolder);
-        } catch (Exception exception) {
-            mCamera.release();
-            mCamera = null;
-        }    	    	
+            c.setParameters(p);
+			c.setPreviewDisplay(h);
+		} catch (IOException e) {
+			Log.v(TAG, "Error initializing camera (io)");
+			e.printStackTrace();
+			releaseCamera();
+			return false;
+		}    	  
+		
+		return true;
     }
     
     
@@ -411,9 +353,9 @@ class Preview extends SurfaceView {
      * 
      */
     public void releaseCamera() {
-    	if ( mCamera != null )
-    		mCamera.release();
-    	mCamera = null;
+    	if ( c != null )
+    		c.release();
+    	c = null;
     }
     
     
@@ -423,17 +365,26 @@ class Preview extends SurfaceView {
     public void finish() {
     	releaseCamera();
     	am.setStreamMute(AudioManager.STREAM_SYSTEM, false);
+    	am = null;
+    	
+    	// unregister the sensor listeners
+    	sm.unregisterListener(accEventListener);
+    	sm.unregisterListener(magEventListener);
+    	sm.unregisterListener(tempEventListener);
+    	sm = null;
+    	
+    	h = null;
     }
     
     
     /**
      * Starts taking a picture.  (Integration of light starts here).
      */
-    public void setUpPicture() {
+    public boolean setUpPicture() {
        	done = false;
-        try {
-        	Log.v(TAG, "Start preview");
-            mCamera.startPreview();
+       	try {
+       		Log.v(TAG, "Start preview");
+            c.startPreview();
             
             lastStartTime = startTime;
             startTime = System.currentTimeMillis();
@@ -446,46 +397,64 @@ class Preview extends SurfaceView {
 				e.printStackTrace();
 			}
             
-        } catch (Exception exception) {
-            mCamera.release();
-            mCamera = null;
+        } catch (RuntimeException e) {
+        	Log.v(TAG, "Start preview failed");
+        	return false;
         }    	
+        
+        return true;
     }
          
     
     /**
      * Finishes taking a picture.
      */
-    public void takePicture() {
+    public boolean takePicture() {
 		Log.v(TAG, "Take picture");
-    	try {
-	    	mCamera.takePicture(null, null, jpegCallback);
-	    		    	
-	    	lastFinishTime = finishTime;
-	    	finishTime = System.currentTimeMillis();
-	    } catch (Exception exception) {
-	        mCamera.release();
-	        mCamera = null;
-	    }    	
-    }
+    	c.takePicture(null, null, jpegCallback);
+    		    	
+    	finishTime = System.currentTimeMillis();
 
+	    return true;
+    }
+    
+    
+	/**
+	 * Moves old picture data to lastPic.  Gets new picture data. 
+	 */
+    PictureCallback jpegCallback = new PictureCallback() {
+    	public void onPictureTaken(byte[] _data, Camera _camera) {
+    		Log.v(TAG, "Start callback");
+    		while (!analysisDone);
+    		lastPic = _data;
+			done = true;
+    	}
+    };
+    
+
+    private int sumColor(int col) {
+    	return Color.red(col) + Color.green(col) + Color.blue(col);
+    }
     
     /**
      * The fastFilter is used to weed out most of the images, either because there is nothing there
      * or because the picture was not dark enough.
      * 
      * @param pic
-     * @return
+     * @return	True if the picture is a potential event.  False otherwise
      */
     private boolean fastFilter(byte[] pic) {
+    	Log.v(TAG, "fastFilter");
     	int numNonZero = 0;
 		bmopt.inSampleSize = 8;
+		bmopt.inPreferredConfig = Bitmap.Config.ARGB_8888;
 		
 		Bitmap bm = BitmapFactory.decodeByteArray(pic, 0, pic.length, bmopt);
 		
 		for (int x=0; x<bm.getWidth(); x++) {
 			for (int y=0; y<bm.getHeight(); y++) {
-				if (Color.blue(bm.getPixel(x, y))>0) {
+				if (sumColor(bm.getPixel(x, y))>fastFilterThreshold) {
+					Log.v(TAG, "ff="+bm.getPixel(x,y)+","+Color.alpha(bm.getPixel(x,y))+","+Color.red(bm.getPixel(x,y))+","+Color.green(bm.getPixel(x, y))+","+Color.blue(bm.getPixel(x, y)));
 					numNonZero++;
 				}
 			}
@@ -493,24 +462,28 @@ class Preview extends SurfaceView {
 		
 		bm.recycle();
 		
-		return (numNonZero>0 && numNonZero<20);    	
+		return (numNonZero>fastFilterMinPix && numNonZero<fastFilterMaxPix);    	
     }
 
-    
+
     /**
      * The slowFilter is used to do a more in-depth analysis of the image.  It is only run after 
      * an image passes the fastFilter.
      * 
      * @param pic
-     * @return
+     * @return	True if the picture is a potential event.  False otherwise
      */
     private boolean slowFilter(byte[] pic) {
-		bmopt.inSampleSize = 1;
+    	Log.v(TAG, "slowFilter");
+		bmopt.inSampleSize = 4;
+		bmopt.inPreferredConfig = Bitmap.Config.ARGB_8888;
+		
 		Bitmap bm = BitmapFactory.decodeByteArray(pic, 0, pic.length, bmopt);
 
 		for (int x=0; x<bm.getWidth(); x++) {
 			for (int y=0; y<bm.getHeight(); y++) {
-				if (Color.blue(bm.getPixel(x, y))>8) {
+				if (sumColor(bm.getPixel(x, y))>slowFilterThreshold) {
+					Log.v(TAG, "color p,r,g,b="+bm.getPixel(x,y)+","+Color.red(bm.getPixel(x,y))+","+Color.green(bm.getPixel(x, y))+","+Color.blue(bm.getPixel(x, y)));
 					bm.recycle();
 					return true;
 				}        				
@@ -524,9 +497,11 @@ class Preview extends SurfaceView {
     
     
     /**
-     * 
+     * Analyzes the picture.  Saves the data if it is a potential cosmic ray event. 
      */
-    public void analyzePicture() {
+    public boolean analyzePicture() {
+    	Log.v(TAG, "analyzing picture");
+    	
     	analysisDone = false;
     	
     	if (lastPic != null) {
@@ -540,13 +515,17 @@ class Preview extends SurfaceView {
     	}
     	
     	analysisDone = true;
+    	
+    	return true;
     }
     
     
     /**
      * Reads all the sensors.
+     * 
+     * TODO: Proper exception handling
      */
-    public void gatherData() {
+    public boolean gatherData() {
 
     	lastEventData.picNum = eventData.picNum;
     	
@@ -579,41 +558,46 @@ class Preview extends SurfaceView {
     	
     	eventData.temp = temp;
     	
-    	try {
-    		if (hasGPSLocation) {
-    			Log.v(TAG, "Trying to get GPS location.");
-    			eventData.gpsLocation = new Location(lm.getLastKnownLocation("gps"));
-    		}
-    		else
-    			eventData.gpsLocation = null;
-    		
-    		if (hasNetworkLocation) {
-    			Log.v(TAG, "Trying to get network location.");
-    			eventData.networkLocation = new Location(lm.getLastKnownLocation("network"));
-    		}
-    		else 
-    			eventData.networkLocation = null;
-	    } catch (Exception e) {
-	    	e.printStackTrace();
-	    }    	
-    		   
+		if (hasGPSLocation) {
+			Location l = lm.getLastKnownLocation("gps");    			
+			if (l!=null)
+				eventData.gpsLocation = new Location(l);
+			else 
+				eventData.gpsLocation = null;
+		}
+		else
+			eventData.gpsLocation = null;
+		
+		if (hasNetworkLocation) {
+			Location l = lm.getLastKnownLocation("network");
+			if (l!=null)
+				eventData.networkLocation = new Location(l);
+			else 
+				eventData.networkLocation = null;
+		}
+		else 
+			eventData.networkLocation = null;
+
+	   	return true;
     }
 
 
     /**
      * 
      * @param eventData
+     * 
      */
     public void saveData(EventData eventData) {
     	try {
-    		File dataDir = getDataDir();
+    		File dataDir = DistObs.getDataDir(this.getContext());
     		if (!dataDir.exists()) {
     			dataDir.mkdir();
     		}
     		BufferedWriter bw = new BufferedWriter(new FileWriter(dataDir.toString() + "/distobs.dat", true));
     		bw.write(eventData.toString()+"\n");
+    		bw.flush();
     		bw.close();
-		} catch (Exception e) {
+		} catch (IOException e) {
 			e.printStackTrace();
 		}	    		
     }
@@ -623,10 +607,11 @@ class Preview extends SurfaceView {
      * Saves a potential cosmic ray picture.
      * 
      * @param pic
+     * 
      */
 	public void savePicture(byte[] pic, EventData eventData) {
         try {
-    		File dataDir = getDataDir();
+    		File dataDir = DistObs.getDataDir(this.getContext());
     		if (!dataDir.exists()) {
     			dataDir.mkdir();
     		}
@@ -634,30 +619,8 @@ class Preview extends SurfaceView {
     		fos.write(pic, 0, pic.length);
     		fos.flush();
     		fos.close();
-		} catch (Exception e) {
+		} catch (IOException e) {
 			e.printStackTrace();
 		}	    		
 	}
-
-	
-    /**
-     * 
-     * @return	The directory to store the data in.
-     */
-    public File getDataDir() {
-   		Log.v(TAG, Environment.getExternalStorageDirectory().getPath() + "/" + getResources().getText(R.string.data_dir));
-    	return new File(Environment.getExternalStorageDirectory().getPath() + "/" + getResources().getText(R.string.data_dir));
-    }
-	
-	/**
-	 * 
-	 */
-    PictureCallback jpegCallback = new PictureCallback() {
-    	public void onPictureTaken(byte[] _data, Camera _camera) {
-    		Log.v(TAG, "Start callback");
-    		while (!analysisDone);
-    		lastPic = _data;
-			done = true;
-    	}
-    };
 }
