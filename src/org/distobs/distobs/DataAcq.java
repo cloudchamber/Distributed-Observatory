@@ -24,6 +24,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
@@ -87,7 +88,7 @@ public class DataAcq extends Activity {
     public class MainLoop extends Thread {
     	private boolean isRunning;
     	private boolean inLoop;
-    	
+     	
     	/**
     	 * Main loop
     	 */
@@ -109,9 +110,12 @@ public class DataAcq extends Activity {
 	        		
 	        		if (isRunning)
 	        			isRunning = sv.takePicture();
+	        		
 	                if (isRunning)
 	                	isRunning = sv.analyzePicture();
 
+	                while (sv.slowFiltering);
+	                
 	                System.gc();
 	                if (isRunning)	             
 	                	while (!sv.done);
@@ -231,6 +235,12 @@ public class DataAcq extends Activity {
         super.onRestart();
         Log.v(TAG, "DistObsCamera restarted");
     }
+	
+	
+	@Override
+	public void onConfigurationChanged(Configuration newConfig) { 
+		super.onConfigurationChanged(newConfig); 
+	}
 	
 	
 	/* Creates the menu items */

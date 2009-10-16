@@ -1,3 +1,23 @@
+/**
+ * Copyright (c) 2009 Kenneth Jensen
+ * 
+ * This file is part of Distributed-Observatory.
+ *
+ * Distributed-Observatory is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Distributed-Observatory is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Distributed-Observatory.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+
 package org.distobs.distobs;
 
 import java.io.BufferedReader;
@@ -5,7 +25,6 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -37,13 +56,11 @@ public class DataSend extends Thread {
 		super();
 		c = distObs.getBaseContext();
 		d = distObs;
-		//c = context;
 	}
 
 	
 	/**
 	 * 
-	 * TODO: implement
 	 */
 	public void run() {
 		registerAndTransfer();
@@ -52,7 +69,6 @@ public class DataSend extends Thread {
 	
 	/**
 	 * 
-	 * TODO: implement
 	 */
 	public void finish() {
 		
@@ -60,20 +76,21 @@ public class DataSend extends Thread {
 	
 	
 	/**
-	 * 
+	 * Registers a unique ID for the phone.  Transfers data. 
 	 */
 	public void registerAndTransfer() {
-		boolean registered = false;
+		boolean registered = true;
 		
+		// attempt to register an ID if not registered
 		if (DistObs.getID(c)<0) {
 			registered = registerID();
 			Log.v(TAG, "registered="+registered);
 		}
 		
+		// once registered, transfer data
 		if (registered) {
-			Log.v(TAG, "stoping data acq");
-			
 			if (d.isActivityRunning) {
+				Log.v(TAG, "stoping data acq");
 				d.stopDataAcq();
 
 				// Wait for it to stop
@@ -96,51 +113,42 @@ public class DataSend extends Thread {
 		}		
 	}
 	
+	
     /**
      * Gets a unique ID from server
      * @return	Returns true if registration was successful.
-     * 
-     * TODO: cleanup
      */
     private boolean registerID() {
-    	BufferedReader rd;
-    	String line;
-		HttpURLConnection conn = null;
-    	TelephonyManager tm = (TelephonyManager)c.getSystemService(Context.TELEPHONY_SERVICE);
-    	String imsiStr = tm.getSubscriberId();
-    	String imeiStr = tm.getDeviceId();
-    	int id = 0;
-    	
-    	String urlString = "http://www.distobs.org/register";
-        URL url;
+    	int id = 0;    	
+        
+    	// registers with the server
 		try {
-			url = new URL(urlString);
-            conn = (HttpURLConnection)url.openConnection();
+			TelephonyManager tm = (TelephonyManager)c.getSystemService(Context.TELEPHONY_SERVICE);    	
 
-            // set-up connection 
+			// set-up connection 
+			HttpURLConnection conn = (HttpURLConnection)(new URL("http://www.distobs.org/bin/register")).openConnection();
 			conn.setRequestMethod("GET");
-            conn.setRequestProperty("imei", imeiStr);
-            conn.setRequestProperty("imsi", imsiStr);
-            Log.v(TAG, "imei="+imeiStr+" imsi="+imsiStr);
+            conn.setRequestProperty("imei", tm.getDeviceId());
+            conn.setRequestProperty("imsi", tm.getSubscriberId());
+            Log.v(TAG, "imei="+tm.getDeviceId()+" imsi="+tm.getSubscriberId());
             
-            rd = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            while ((line = rd.readLine()) != null) {
-            	id = Integer.parseInt(line);
-            	Log.v(TAG, "reg resp="+line);
-            }
-            rd.close();
-            
-		} catch (MalformedURLException e1) {
-			e1.printStackTrace();
+            // get response
+        	BufferedReader rd = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+        	String line = rd.readLine();
+        	Log.v(TAG, "id="+line);
+            id = Integer.parseInt(line);
+            rd.close();            
+		} catch (MalformedURLException e) {
+			e.printStackTrace();
+			return false;
 		} catch (IOException e) {
 			e.printStackTrace();
+			return false;
 		}
-
-
-        
+		
+		// write registered ID to a config file
     	try {
-			FileOutputStream fos = c.openFileOutput("config", Context.MODE_PRIVATE);
-			OutputStreamWriter osw = new OutputStreamWriter(fos);
+			OutputStreamWriter osw = new OutputStreamWriter(c.openFileOutput("config", Context.MODE_PRIVATE));
 			osw.write(""+id+"\n");
 			osw.flush();
 			osw.close();
@@ -188,12 +196,10 @@ public class DataSend extends Thread {
 	 * @return 	True on successful transfer.  False otherwise.
 	 * 
 	 * TODO: clean up
-	 * TODO: setup real server
 	 * TODO: reduce memory footprint
 	 */
 	private boolean transferFile(String filename) {
 		HttpURLConnection conn = null;
-        DataOutputStream dos = null;
         
         String clientFileName = DistObs.getDataDir(c).toString() + "/" + filename;
         String serverFileName = String.format("%09d-", DistObs.getID(c)) + filename;
@@ -206,14 +212,11 @@ public class DataSend extends Thread {
         byte[] buffer;
         int maxBufferSize = 1024*1024;
 
-        String urlString = "http://www.distobs.org/upload";
-
         // Attempt to upload the file
         try {
             Log.v(TAG, "Start file upload");
             FileInputStream fis = new FileInputStream(new File(clientFileName));
-            URL url = new URL(urlString);
-            conn = (HttpURLConnection)url.openConnection();
+            conn = (HttpURLConnection)(new URL("http://www.distobs.org/bin/upload")).openConnection();
 
             // set-up connection 
             conn.setDoInput(true);
@@ -224,7 +227,7 @@ public class DataSend extends Thread {
             conn.setRequestProperty("Connection", "Keep-Alive");
             conn.setRequestProperty("Content-Type", "multipart/form-data;boundary="+boundary);
 
-            dos = new DataOutputStream( conn.getOutputStream() );
+            DataOutputStream dos = new DataOutputStream( conn.getOutputStream() );
             dos.writeBytes(twoHyphens + boundary + lineEnd);
             dos.writeBytes("Content-Disposition: form-data; name=\"uploadedfile\";filename=\"" + serverFileName +"\"" + lineEnd);
             dos.writeBytes(lineEnd);

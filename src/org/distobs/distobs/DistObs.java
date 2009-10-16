@@ -17,11 +17,11 @@
  * along with Distributed-Observatory.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
 package org.distobs.distobs;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -67,8 +67,7 @@ import android.util.Log;
  * 3) figure out security/privacy/anti-cheating measures
  * 4) make options menu (allows control over when it turns on, what data it sends, etc...)
  * 5) spruce up data display
- * 6) Disable camera button.
- * 
+ * 6) dies when i open flinger
  */
 
 public class DistObs extends Service {
@@ -104,9 +103,7 @@ public class DistObs extends Service {
     public static int getID(Context c) {
     	try {
 			Log.v(TAG, "trying to open config");
-			FileInputStream fis = c.openFileInput("config");
-			InputStreamReader isr = new InputStreamReader(fis);
-			BufferedReader br = new BufferedReader(isr);
+			BufferedReader br = new BufferedReader(new InputStreamReader(c.openFileInput("config")));
 			String idStr = br.readLine();
 			Log.v(TAG, "buf="+idStr);
 			return Integer.parseInt(idStr);

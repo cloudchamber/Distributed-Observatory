@@ -27,7 +27,10 @@ import java.io.IOException;
 import java.util.Calendar;
 import java.util.List;
 
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -77,7 +80,8 @@ public class SensorView extends SurfaceView {
     
 
     public boolean cameraError = false;
-    public boolean analysisDone = true;   
+    public boolean analysisDone = true; 
+    public boolean slowFiltering = false;
     public boolean created = false;
     public boolean done = true;
     public int numEvents = 0;
@@ -203,19 +207,18 @@ public class SensorView extends SurfaceView {
     SensorView(Context context) {
         super(context);
        
-        // Turn camera button off.
-        this.setOnKeyListener(new OnKeyListener(){
+        // Turn camera button off. (This doesn't work yet)
+        /*setOnKeyListener(new OnKeyListener(){        
         	@Override
             public boolean onKey(View v, int keyCode, KeyEvent event){
-                if(event.getAction() == KeyEvent.ACTION_DOWN) {
-                    switch(keyCode) {
-                        case KeyEvent.KEYCODE_CAMERA:
-                            return true;
-                    }
+                switch(keyCode) {
+                    case KeyEvent.KEYCODE_CAMERA:
+                        return true;
                 }
                 return false;
             }
-        });
+        });*/
+
 
         
         // Set up audio manager.  Turn camera sounds off.
@@ -295,8 +298,6 @@ public class SensorView extends SurfaceView {
         eventData.picNum = 0;
     }
 
-    
- 
     
     /**
      * Functions for taking and analyzing pictures.
@@ -420,21 +421,34 @@ public class SensorView extends SurfaceView {
     
     
 	/**
-	 * Moves old picture data to lastPic.  Gets new picture data. 
+	 * Moves old picture data to lastPic.  Gets new picture data.
+	 * 
+	 *  Note: This will cause an ANR if you remain here during slow filtering
 	 */
     PictureCallback jpegCallback = new PictureCallback() {
     	public void onPictureTaken(byte[] _data, Camera _camera) {
     		Log.v(TAG, "Start callback");
-    		while (!analysisDone);
-    		lastPic = _data;
+    		while (!analysisDone && !slowFiltering);
+    		if (slowFiltering) {
+    			lastPic = null;
+    		}
+    		else {
+    			lastPic = _data;
+    		}
 			done = true;
     	}
     };
     
-
+    
+    /**
+     * 
+     * @param col
+     * @return
+     */
     private int sumColor(int col) {
     	return Color.red(col) + Color.green(col) + Color.blue(col);
     }
+    
     
     /**
      * The fastFilter is used to weed out most of the images, either because there is nothing there
@@ -480,7 +494,7 @@ public class SensorView extends SurfaceView {
 		
 		Bitmap bm = BitmapFactory.decodeByteArray(pic, 0, pic.length, bmopt);
 
-		for (int x=0; x<bm.getWidth(); x++) {
+		for (int x=0; x<bm.getWidth(); x++) {					
 			for (int y=0; y<bm.getHeight(); y++) {
 				if (sumColor(bm.getPixel(x, y))>slowFilterThreshold) {
 					Log.v(TAG, "color p,r,g,b="+bm.getPixel(x,y)+","+Color.red(bm.getPixel(x,y))+","+Color.green(bm.getPixel(x, y))+","+Color.blue(bm.getPixel(x, y)));
@@ -506,11 +520,13 @@ public class SensorView extends SurfaceView {
     	
     	if (lastPic != null) {
 	    	if (fastFilter(lastPic)) {
+    			slowFiltering = true;
 	    		if (slowFilter(lastPic)) {
 	    			savePicture(lastPic, lastEventData);
 	    			saveData(lastEventData);
 	    			numEvents++;
 	    		}
+	    		slowFiltering = false;
 	    	}
     	}
     	
@@ -522,8 +538,6 @@ public class SensorView extends SurfaceView {
     
     /**
      * Reads all the sensors.
-     * 
-     * TODO: Proper exception handling
      */
     public boolean gatherData() {
 

@@ -16,7 +16,14 @@
         		<category android:name="android.intent.category.HOME"></category>
         	</intent-filter>
         </receiver>
-        <activity android:name=".DataAcq"></activity>        
+		<receiver android:name=".CameraButtonIntentReceiver">
+    		<intent-filter android:priority="99999">
+        		<action android:name="android.intent.action.CAMERA_BUTTON"/>
+    		</intent-filter>
+		</receiver> 
+        <activity android:name=".DataAcq"
+                  android:configChanges="keyboardHidden|orientation|screenLayout">
+		</activity>
     </application>
 
 	<uses-sdk android:minSdkVersion="3" ></uses-sdk>
