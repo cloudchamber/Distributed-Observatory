@@ -62,6 +62,7 @@ import android.util.Log;
  *
  *
  * TODO:
+ * 0) At some point (not too long ago) the uploads started being 0 bytes!
  * 1) Taking a picture still causes occasional crashes on the G1 and frequent crashes in the emulator.
  * 2) Generalize some of the hard-coded parameters (i.e. pic size) so it works on more cameras 
  * 3) implement options menu options
