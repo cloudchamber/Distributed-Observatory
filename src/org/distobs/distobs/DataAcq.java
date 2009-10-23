@@ -44,6 +44,7 @@ public class DataAcq extends Activity {
 
 	private static final int MENU_ALWAYS_ON = 0;
 	private static final int MENU_CHARGING_ON = 1;
+	private static final int MENU_OFF = 2;
     
     private SensorView sv;
     private TextView tv;
@@ -137,8 +138,13 @@ public class DataAcq extends Activity {
     		
     		isRunning = false;    
     		while (inLoop);
-    		
-    		sv.finish();
+
+    		try {
+    			sv.finish();
+    		}
+    		catch (NullPointerException e) {
+    			e.printStackTrace();
+    		}
     	}
     }
 
@@ -176,7 +182,6 @@ public class DataAcq extends Activity {
 	
 	/**
 	 * 
-	 * TODO: Probably not the right way of doing runOnUiThread
 	 */
 	@Override
 	protected void onStart() {
@@ -236,7 +241,6 @@ public class DataAcq extends Activity {
         Log.v(TAG, "DistObsCamera restarted");
     }
 	
-	
 	@Override
 	public void onConfigurationChanged(Configuration newConfig) { 
 		super.onConfigurationChanged(newConfig); 
@@ -247,6 +251,7 @@ public class DataAcq extends Activity {
 	public boolean onCreateOptionsMenu(Menu menu) {		
 	    menu.add(0, MENU_ALWAYS_ON, 0, "Always on");
 	    menu.add(0, MENU_CHARGING_ON, 0, "On when charging");
+	    menu.add(0, MENU_OFF, 0, "Quit");
 	    return true;
 	}
 
@@ -256,6 +261,10 @@ public class DataAcq extends Activity {
 	    case MENU_ALWAYS_ON:        
 	        return true;
 	    case MENU_CHARGING_ON:	        
+	        return true;
+	    case MENU_OFF:
+	    	ml.finish();
+
 	        return true;
 	    }
 	    return false;

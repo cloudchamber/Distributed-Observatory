@@ -61,21 +61,20 @@ import android.util.Log;
  *
  *
  *
- * TODO: 
- * 0) Take data!
- * 1) Check incoming call -- caused an uncaught exception 
- * 3) figure out security/privacy/anti-cheating measures
- * 4) make options menu (allows control over when it turns on, what data it sends, etc...)
- * 5) spruce up data display
- * 6) dies when i open flinger
+ * TODO:
+ * 1) Taking a picture still causes occasional crashes on the G1 and frequent crashes in the emulator.
+ * 2) Generalize some of the hard-coded parameters (i.e. pic size) so it works on more cameras 
+ * 3) implement options menu options
+ * 4) spruce up data display
+ * 5) figure out security/privacy/anti-cheating measures
  */
 
 public class DistObs extends Service {
 
 	private static final String TAG = "DistObsService";	
 	
-	private static long waitTimeAfterStart = 6000; // ms
-	private static long waitTimeAfterPlugged = 2000; // ms
+	private static long waitTimeAfterStart = 0; //6000; // ms
+	private static long waitTimeAfterPlugged = 0; //2000; // ms
 	
 	private boolean alwaysOn = true;
 	public boolean isActivityRunning = false;
@@ -192,7 +191,12 @@ public class DistObs extends Service {
 	
 				if ( ni != null && ni.getState() == NetworkInfo.State.CONNECTED ) { 
 					Log.v(TAG, "network connected");
-					ds.start();
+					try {
+						ds.start();
+					}
+					catch (IllegalThreadStateException e) {
+						e.printStackTrace();
+					}
 				}
 			}
 		}
@@ -215,7 +219,7 @@ public class DistObs extends Service {
 	public void onStart(Intent intent, int startId) {
 		super.onStart(intent, startId);
 		
-		Log.v(TAG, "Distributed observatory service started");	
+		Log.v(TAG, "Distributed observatory service started");
 	}
 
 	
@@ -233,6 +237,8 @@ public class DistObs extends Service {
 		registerReceiver(networkReceiver, new IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION));
 		
 		ds = new DataSend(this);
+		
+		startDataAcq();		
 	}
 
 	

@@ -206,21 +206,7 @@ public class SensorView extends SurfaceView {
      */
     SensorView(Context context) {
         super(context);
-       
-        // Turn camera button off. (This doesn't work yet)
-        /*setOnKeyListener(new OnKeyListener(){        
-        	@Override
-            public boolean onKey(View v, int keyCode, KeyEvent event){
-                switch(keyCode) {
-                    case KeyEvent.KEYCODE_CAMERA:
-                        return true;
-                }
-                return false;
-            }
-        });*/
-
-
-        
+               
         // Set up audio manager.  Turn camera sounds off.
         am = (AudioManager)context.getSystemService(Context.AUDIO_SERVICE);        
         am.setStreamMute(AudioManager.STREAM_SYSTEM, true);
@@ -324,7 +310,7 @@ public class SensorView extends SurfaceView {
     	}
     	
         try {
-        	Log.v(TAG, "Init. camera");
+        	Log.v(TAG, "Init. camera h="+h.isCreating());
 
             Camera.Parameters p;
             p = c.getParameters();
@@ -412,6 +398,8 @@ public class SensorView extends SurfaceView {
      */
     public boolean takePicture() {
 		Log.v(TAG, "Take picture");
+    	analysisDone = false;
+
     	c.takePicture(null, null, jpegCallback);
     		    	
     	finishTime = System.currentTimeMillis();
@@ -512,12 +500,12 @@ public class SensorView extends SurfaceView {
     
     /**
      * Analyzes the picture.  Saves the data if it is a potential cosmic ray event. 
+     * 
+     * TODO: got a null pointer exception in savePicture.  figure out how.
      */
     public boolean analyzePicture() {
     	Log.v(TAG, "analyzing picture");
-    	
-    	analysisDone = false;
-    	
+    	    	
     	if (lastPic != null) {
 	    	if (fastFilter(lastPic)) {
     			slowFiltering = true;
@@ -635,6 +623,8 @@ public class SensorView extends SurfaceView {
     		fos.close();
 		} catch (IOException e) {
 			e.printStackTrace();
-		}	    		
+		} catch (NullPointerException e) {
+			e.printStackTrace();
+		}
 	}
 }

@@ -21,8 +21,13 @@
         		<action android:name="android.intent.action.CAMERA_BUTTON"/>
     		</intent-filter>
 		</receiver> 
-        <activity android:name=".DataAcq"
+        <activity android:name=".DataAcq"       
                   android:configChanges="keyboardHidden|orientation|screenLayout">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
 		</activity>
     </application>
 
