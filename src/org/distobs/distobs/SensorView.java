@@ -27,10 +27,7 @@ import java.io.IOException;
 import java.util.Calendar;
 import java.util.List;
 
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -47,10 +44,8 @@ import android.location.LocationManager;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.KeyEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.View;
 
 
 
@@ -417,10 +412,7 @@ public class SensorView extends SurfaceView {
     	public void onPictureTaken(byte[] _data, Camera _camera) {
     		Log.v(TAG, "Start callback");
     		while (!analysisDone && !slowFiltering);
-    		if (slowFiltering) {
-    			lastPic = null;
-    		}
-    		else {
+    		if (!slowFiltering) {
     			lastPic = _data;
     		}
 			done = true;
@@ -480,19 +472,21 @@ public class SensorView extends SurfaceView {
 		bmopt.inSampleSize = 4;
 		bmopt.inPreferredConfig = Bitmap.Config.ARGB_8888;
 		
-		Bitmap bm = BitmapFactory.decodeByteArray(pic, 0, pic.length, bmopt);
-
-		for (int x=0; x<bm.getWidth(); x++) {					
-			for (int y=0; y<bm.getHeight(); y++) {
-				if (sumColor(bm.getPixel(x, y))>slowFilterThreshold) {
-					Log.v(TAG, "color p,r,g,b="+bm.getPixel(x,y)+","+Color.red(bm.getPixel(x,y))+","+Color.green(bm.getPixel(x, y))+","+Color.blue(bm.getPixel(x, y)));
-					bm.recycle();
-					return true;
-				}        				
-			}
-		}    	
-		
-		bm.recycle();		
+		if ( pic != null ) {
+			Bitmap bm = BitmapFactory.decodeByteArray(pic, 0, pic.length, bmopt);
+	
+			for (int x=0; x<bm.getWidth(); x++) {					
+				for (int y=0; y<bm.getHeight(); y++) {
+					if (sumColor(bm.getPixel(x, y))>slowFilterThreshold) {
+						Log.v(TAG, "color p,r,g,b="+bm.getPixel(x,y)+","+Color.red(bm.getPixel(x,y))+","+Color.green(bm.getPixel(x, y))+","+Color.blue(bm.getPixel(x, y)));
+						bm.recycle();
+						return true;
+					}        				
+				}
+			}    	
+			
+			bm.recycle();		
+		}
 		
 		return false;
     }
@@ -500,8 +494,6 @@ public class SensorView extends SurfaceView {
     
     /**
      * Analyzes the picture.  Saves the data if it is a potential cosmic ray event. 
-     * 
-     * TODO: got a null pointer exception in savePicture.  figure out how.
      */
     public boolean analyzePicture() {
     	Log.v(TAG, "analyzing picture");
@@ -511,9 +503,10 @@ public class SensorView extends SurfaceView {
     			slowFiltering = true;
 	    		if (slowFilter(lastPic)) {
 	    			savePicture(lastPic, lastEventData);
-	    			saveData(lastEventData);
+	    			saveData(lastEventData);	    			
 	    			numEvents++;
 	    		}
+	    		lastPic = null;  // to prevent analyzing same pic twice (necessary?)
 	    		slowFiltering = false;
 	    	}
     	}

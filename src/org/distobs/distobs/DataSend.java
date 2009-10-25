@@ -137,7 +137,10 @@ public class DataSend extends Thread {
         	String line = rd.readLine();
         	Log.v(TAG, "id="+line);
             id = Integer.parseInt(line);
-            rd.close();            
+            rd.close();         
+		} catch (NumberFormatException e) {
+			e.printStackTrace();
+			return false;
 		} catch (MalformedURLException e) {
 			e.printStackTrace();
 			return false;
@@ -146,8 +149,9 @@ public class DataSend extends Thread {
 			return false;
 		}
 		
+		DistObs.setID(c, id);
 		// write registered ID to a config file
-    	try {
+    	/*try {
 			OutputStreamWriter osw = new OutputStreamWriter(c.openFileOutput("config", Context.MODE_PRIVATE));
 			osw.write(""+id+"\n");
 			osw.flush();
@@ -158,7 +162,7 @@ public class DataSend extends Thread {
 		} catch (IOException e) {
 			e.printStackTrace();
 			return false;
-		}
+		}*/
 		
 		return true;
     }

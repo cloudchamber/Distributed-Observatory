@@ -20,17 +20,14 @@
 
 package org.distobs.distobs;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStreamReader;
 
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.wifi.WifiManager;
@@ -62,10 +59,10 @@ import android.util.Log;
  *
  *
  * TODO:
- * 0) At some point (not too long ago) the uploads started being 0 bytes!
+ * 0) (fixed?) At some point (not too long ago) the uploads started being 0 bytes!
  * 1) Taking a picture still causes occasional crashes on the G1 and frequent crashes in the emulator.
  * 2) Generalize some of the hard-coded parameters (i.e. pic size) so it works on more cameras 
- * 3) implement options menu options
+ * 3) (fixed?) implement options menu options
  * 4) spruce up data display
  * 5) figure out security/privacy/anti-cheating measures
  */
@@ -73,14 +70,76 @@ import android.util.Log;
 public class DistObs extends Service {
 
 	private static final String TAG = "DistObsService";	
+	private static final String CONFIG_FILENAME = "configFile";	
+
+	public static final int SCHEDULE_ALWAYSON = 0;
+	public static final int SCHEDULE_CHARGINGON = 1;
+	public static final int SCHEDULE_RUNON = 2;	
+	public static final int DISPLAY_DATA = 3;
+	public static final int DISPLAY_NONE = 4;
+
 	
 	private static long waitTimeAfterStart = 0; //6000; // ms
 	private static long waitTimeAfterPlugged = 0; //2000; // ms
 	
-	private boolean alwaysOn = true;
 	public boolean isActivityRunning = false;
 	private long serviceStartTime = 0;
 	private DataSend ds;
+
+	
+	/**
+	 * 
+	 * @param c
+	 * @param opts
+	 */
+	public static void setScheduleOptions(Context c, int opts) {
+		SharedPreferences.Editor editor = c.getSharedPreferences(CONFIG_FILENAME, 0).edit();
+		editor.putInt("ScheduleOption", opts);
+		editor.commit();
+	}
+	
+	
+	/**
+	 * 
+	 * @param c
+	 * @return
+	 */
+	public static int getScheduleOptions(Context c) {
+		SharedPreferences settings = c.getSharedPreferences(CONFIG_FILENAME, 0);
+		return settings.getInt("ScheduleOption", SCHEDULE_CHARGINGON);
+	}
+	
+	public int getScheduleOptions() {
+		return getScheduleOptions(this);
+	}
+	
+	
+	/**
+	 * 
+	 * @param c
+	 * @param opts
+	 */
+	public static void setDisplayOptions(Context c, int opts) {
+		SharedPreferences.Editor editor = c.getSharedPreferences(CONFIG_FILENAME, 0).edit();
+		editor.putInt("DisplayOption", opts);
+		editor.commit();		
+	}
+	
+	
+	/**
+	 * 
+	 * @param c
+	 * @return
+	 */
+	public static int getDisplayOptions(Context c) {
+		SharedPreferences settings = c.getSharedPreferences(CONFIG_FILENAME, 0);
+		return settings.getInt("DisplayOption", DISPLAY_NONE);
+	}
+	
+	public int getDisplayOptions() {
+		return getDisplayOptions(this);
+	}
+	
 	
 	
     /**
@@ -101,7 +160,10 @@ public class DistObs extends Service {
      * @return	The integer ID, -1 on failure.
      */
     public static int getID(Context c) {
-    	try {
+		SharedPreferences settings = c.getSharedPreferences(CONFIG_FILENAME, 0);
+		return settings.getInt("ID", -1);
+
+/*    	try {
 			Log.v(TAG, "trying to open config");
 			BufferedReader br = new BufferedReader(new InputStreamReader(c.openFileInput("config")));
 			String idStr = br.readLine();
@@ -115,13 +177,25 @@ public class DistObs extends Service {
 			e.printStackTrace();
 		}    		
 		
-    	return -1;
+    	return -1;*/
+    	
+    	
     }
     
     public int getID() {
     	return getID(this);
     }
     
+    
+    public static void setID(Context c, int id) {
+		SharedPreferences.Editor editor = c.getSharedPreferences(CONFIG_FILENAME, 0).edit();
+		editor.putInt("ID", id);
+		editor.commit();		    	
+    }
+    
+    public void setID(int id) {
+    	setID(this, id);
+    }
 
 	/**
 	 * Starts the camera/data acquisition. (Non-blocking)
@@ -153,24 +227,28 @@ public class DistObs extends Service {
 		private static final String TAG = "BatteryReceiver";	
 		
 		public void onReceive(Context context, Intent intent) {
+			int scheduleOpt = getScheduleOptions();
+			Log.v(TAG, "scheduleOpt = "+scheduleOpt);
 			if ( intent.getIntExtra("plugged", -1) > 0 ) {
 				Log.v(TAG, "Plugged");
-				// wait at least a minute after startup before a "plugged" signal
-				// starts data acq.
-				if (System.currentTimeMillis()-serviceStartTime > waitTimeAfterStart) {
-					// Wait a fixed amount of time before starting data acquisition.
-					try {
-						Thread.sleep(waitTimeAfterPlugged);
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}				
-					
-					startDataAcq();
+				if ( scheduleOpt == SCHEDULE_ALWAYSON || scheduleOpt == SCHEDULE_CHARGINGON) {
+					// wait at least a minute after startup before a "plugged" signal
+					// starts data acq.
+					if (System.currentTimeMillis()-serviceStartTime > waitTimeAfterStart) {
+						// Wait a fixed amount of time before starting data acquisition.
+						try {
+							Thread.sleep(waitTimeAfterPlugged);
+						} catch (InterruptedException e) {
+							e.printStackTrace();
+						}				
+						
+						startDataAcq();
+					}
 				}
 			}
 			else {
 				Log.v(TAG, "Unplugged");
-				if (!alwaysOn)
+				if ( scheduleOpt == SCHEDULE_CHARGINGON)
 					stopDataAcq();				
 			}			 
 		}
@@ -237,9 +315,10 @@ public class DistObs extends Service {
 		registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
 		registerReceiver(networkReceiver, new IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION));
 		
-		ds = new DataSend(this);
+		ds = new DataSend(this);		
 		
-		startDataAcq();		
+		if (getScheduleOptions() == SCHEDULE_ALWAYSON)
+			startDataAcq();		
 	}
 
 	

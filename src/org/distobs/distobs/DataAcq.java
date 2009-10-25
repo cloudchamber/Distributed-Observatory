@@ -25,10 +25,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.SubMenu;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -42,12 +45,11 @@ public class DataAcq extends Activity {
     
     private static final String TAG = "DistObsCamera";
 
-	private static final int MENU_ALWAYS_ON = 0;
-	private static final int MENU_CHARGING_ON = 1;
-	private static final int MENU_OFF = 2;
+    private static final int MENU_QUIT = 5;
     
     private SensorView sv;
     private TextView tv;
+    private ImageView iv;
     private LinearLayout ll;
 
     private MainLoop ml;
@@ -73,11 +75,31 @@ public class DataAcq extends Activity {
 	public class DisplayUpdater implements Runnable {
 		@Override
 		public void run() {
-			if (tv != null) {
-	       		tv.setText("Num. Events = " + sv.numEvents + "\n" + sv.lastEventData.toString("\n"));
-	       		tv.setWidth(1000);
-				tv.postInvalidate();
-			}
+			switch ( DistObs.getDisplayOptions(a) ) {
+			case DistObs.DISPLAY_DATA:
+				if (iv != null) {					
+					//iv.setVisibility(ImageView.INVISIBLE);
+					//iv.setMaxWidth(1);
+				}
+				if (tv != null) {
+					tv.setVisibility(TextView.VISIBLE);
+		       		tv.setText("Poss. Events / Pictures = " + sv.numEvents + " / " + sv.lastEventData.picNum + "\n" + "ID = " + DistObs.getID(a)); //sv.lastEventData.toString("\n"));
+		       		tv.setWidth(1000);
+					tv.postInvalidate();
+				}
+				break;				
+			case DistObs.DISPLAY_NONE:
+				if (iv != null) {
+					iv.setVisibility(ImageView.VISIBLE);					
+					//iv.setMaxWidth(1000);
+					//iv.setMaxHeight(1000);					
+				}
+				if (tv != null) {
+					tv.setVisibility(TextView.INVISIBLE);
+					//tv.setWidth(1);
+				}
+				break;
+			}			
 		}
 	}
 	
@@ -168,10 +190,14 @@ public class DataAcq extends Activity {
 		
 		ll = new LinearLayout(this);
 		tv = new TextView(this);
+		iv = new ImageView(this);
         sv = new SensorView(this);        
 
-        ll.addView(tv);
-        ll.addView(sv);
+        ll.setOrientation(LinearLayout.VERTICAL);
+        ll.addView(iv, 0);
+        ll.addView(tv, 1);        
+        ll.addView(sv, 2);
+        iv.setImageDrawable(a.getResources().getDrawable(R.drawable.distobs_white));
         
         setContentView(ll);
 
@@ -228,7 +254,7 @@ public class DataAcq extends Activity {
 	@Override
 	protected void onPause() {
         super.onPause();
-        Log.v(TAG, "DistObsCamera pauseed");
+        Log.v(TAG, "DistObsCamera paused");
     }
 
 	
@@ -247,24 +273,86 @@ public class DataAcq extends Activity {
 	}
 	
 	
-	/* Creates the menu items */
+	/**
+	 *  Creates the menu items
+	 *  Schedule
+	 *    Always on
+	 *    On when charging
+	 *    On only when run
+	 *  Display
+	 *    Display sensor data
+	 *    No display
+	 *  Quit 
+	 *  
+	 *  TODO: generate via xml
+	 */
 	public boolean onCreateOptionsMenu(Menu menu) {		
-	    menu.add(0, MENU_ALWAYS_ON, 0, "Always on");
-	    menu.add(0, MENU_CHARGING_ON, 0, "On when charging");
-	    menu.add(0, MENU_OFF, 0, "Quit");
+	    SubMenu sm1 = menu.addSubMenu("Schedule");	    	  
+	    MenuItem m1i0 = sm1.add(0, DistObs.SCHEDULE_ALWAYSON, 0, "Always on");
+	    MenuItem m1i1 = sm1.add(0, DistObs.SCHEDULE_CHARGINGON, 1, "On when charging");
+	    MenuItem m1i2 = sm1.add(0, DistObs.SCHEDULE_RUNON, 2, "On only when run");
+	    m1i0.setCheckable(true);
+	    m1i1.setCheckable(true);
+	    m1i2.setCheckable(true);
+	    switch (DistObs.getScheduleOptions(this)) {
+	    case DistObs.SCHEDULE_ALWAYSON:
+	    	m1i0.setChecked(true);
+	    	break;
+	    case DistObs.SCHEDULE_CHARGINGON:
+	    	m1i1.setChecked(true);
+	    	break;
+	    case DistObs.SCHEDULE_RUNON:
+	    	m1i2.setChecked(true);
+	    	break;
+	    }
+	    sm1.setGroupCheckable(0, true, true);  // must be placed after setting other stuff
+	    
+	    SubMenu sm2 = menu.addSubMenu("Display");
+	    MenuItem m2i0 = sm2.add(0, DistObs.DISPLAY_DATA, 0, "Display sensors data");
+	    MenuItem m2i1 = sm2.add(0, DistObs.DISPLAY_NONE, 1, "No display");
+	    m2i0.setCheckable(true);
+	    m2i1.setCheckable(true);
+	    switch (DistObs.getDisplayOptions(this)) {
+	    case DistObs.DISPLAY_DATA:
+	    	m2i0.setChecked(true);
+	    	break;
+	    case DistObs.DISPLAY_NONE:
+	    	m2i1.setChecked(true);
+	    	break;
+	    }
+	    sm2.setGroupCheckable(0, true, true);  // must be placed after setting other stuff
+	    													
+	    menu.add(0, MENU_QUIT, 0, "Quit");
 	    return true;
 	}
 
-	/* Handles item selections */
+	/**
+	 * Handles item selections 
+	 */
 	public boolean onOptionsItemSelected(MenuItem item) {
 	    switch (item.getItemId()) {
-	    case MENU_ALWAYS_ON:        
+	    case DistObs.SCHEDULE_ALWAYSON:
+	    	DistObs.setScheduleOptions(this, DistObs.SCHEDULE_ALWAYSON);
+	    	item.setChecked(true);
 	        return true;
-	    case MENU_CHARGING_ON:	        
+	    case DistObs.SCHEDULE_CHARGINGON:
+	    	DistObs.setScheduleOptions(this, DistObs.SCHEDULE_CHARGINGON);
+	    	item.setChecked(true);
 	        return true;
-	    case MENU_OFF:
+	    case DistObs.SCHEDULE_RUNON:
+	    	DistObs.setScheduleOptions(this, DistObs.SCHEDULE_RUNON);
+	    	item.setChecked(true);
+	    	return true;
+	    case DistObs.DISPLAY_DATA:
+	    	DistObs.setDisplayOptions(this, DistObs.DISPLAY_DATA);
+	    	item.setChecked(true);
+	    	return true;
+	    case DistObs.DISPLAY_NONE:
+	    	item.setChecked(true);
+	    	DistObs.setDisplayOptions(this, DistObs.DISPLAY_NONE);
+	    	return true;
+	    case MENU_QUIT:
 	    	ml.finish();
-
 	        return true;
 	    }
 	    return false;
