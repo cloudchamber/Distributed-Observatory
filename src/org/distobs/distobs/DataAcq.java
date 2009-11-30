@@ -25,7 +25,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
-import android.content.res.Resources;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
@@ -45,7 +44,7 @@ public class DataAcq extends Activity {
     
     private static final String TAG = "DistObsCamera";
 
-    private static final int MENU_QUIT = 5;
+    private static final int MENU_QUIT = 6;
     
     private SensorView sv;
     private TextView tv;
@@ -55,6 +54,9 @@ public class DataAcq extends Activity {
     private MainLoop ml;
     private DisplayUpdater du;
     private Activity a;
+    
+    private int numPastEvents = 0;
+    private int numPastSamples = 0;
     
 
     /**
@@ -83,7 +85,10 @@ public class DataAcq extends Activity {
 				}
 				if (tv != null) {
 					tv.setVisibility(TextView.VISIBLE);
-		       		tv.setText("Poss. Events / Pictures = " + sv.numEvents + " / " + sv.lastEventData.picNum + "\n" + "ID = " + DistObs.getID(a)); //sv.lastEventData.toString("\n"));
+		       		tv.setText("Distributed Observatory v0.1" 
+		       				+ "\nPoss. Events / Pictures = " + sv.numEvents + "/" + sv.lastEventData.picNum 
+		       				+ "  (" + (sv.numEvents+numPastEvents) + "/" + (sv.lastEventData.picNum+numPastSamples) + ")" 
+		       				+ "\nID = " + DistObs.getID(a)); //sv.lastEventData.toString("\n"));
 		       		tv.setWidth(1000);
 					tv.postInvalidate();
 				}
@@ -126,19 +131,20 @@ public class DataAcq extends Activity {
 	    			Log.v(TAG, "Start loop"); 
 	
 	        		isRunning = sv.setUpPicture();
+	        		Log.v(TAG, "h1");
 	        		if (isRunning)
 	        			isRunning = sv.gatherData();
-	
+	        		Log.v(TAG, "h2");
 	        		runOnUiThread(du);
-	        		
+	        		Log.v(TAG, "h3");
 	        		if (isRunning)
 	        			isRunning = sv.takePicture();
-	        		
+	        		Log.v(TAG, "h4");
 	                if (isRunning)
 	                	isRunning = sv.analyzePicture();
-
+	                Log.v(TAG, "h5");
 	                while (sv.slowFiltering);
-	                
+	                Log.v(TAG, "h6");
 	                System.gc();
 	                if (isRunning)	             
 	                	while (!sv.done);
@@ -162,11 +168,14 @@ public class DataAcq extends Activity {
     		while (inLoop);
 
     		try {
+    			Log.v(TAG, "finishing surface view");
     			sv.finish();
     		}
     		catch (NullPointerException e) {
     			e.printStackTrace();
     		}
+    		Log.v(TAG, "finished");
+
     	}
     }
 
@@ -183,11 +192,14 @@ public class DataAcq extends Activity {
 	protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);        
         Log.v(TAG, "DistObsCamera created");
-        
+                
 		registerReceiver(broadcastReceiver, new IntentFilter("STOP"));
         		
 		a = this;
 		
+        numPastEvents = DistObs.getNumEvents(a);
+        numPastSamples = DistObs.getNumSamples(a);
+
 		ll = new LinearLayout(this);
 		tv = new TextView(this);
 		iv = new ImageView(this);
@@ -226,6 +238,7 @@ public class DataAcq extends Activity {
         super.onStop();
         Log.v(TAG, "DistObsCamera stopped");
         
+       	DistObs.setNumEventsAndSamples(a, sv.numEvents+numPastEvents, sv.lastEventData.picNum+numPastSamples);
        	ml.finish();
     }
 
@@ -240,6 +253,7 @@ public class DataAcq extends Activity {
 
         unregisterReceiver(broadcastReceiver);
         
+        iv = null;
         sv = null;
         tv = null;
         ll = null;
@@ -267,6 +281,10 @@ public class DataAcq extends Activity {
         Log.v(TAG, "DistObsCamera restarted");
     }
 	
+	
+	/**
+	 * Do nothing
+	 */
 	@Override
 	public void onConfigurationChanged(Configuration newConfig) { 
 		super.onConfigurationChanged(newConfig); 
@@ -290,10 +308,12 @@ public class DataAcq extends Activity {
 	    SubMenu sm1 = menu.addSubMenu("Schedule");	    	  
 	    MenuItem m1i0 = sm1.add(0, DistObs.SCHEDULE_ALWAYSON, 0, "Always on");
 	    MenuItem m1i1 = sm1.add(0, DistObs.SCHEDULE_CHARGINGON, 1, "On when charging");
-	    MenuItem m1i2 = sm1.add(0, DistObs.SCHEDULE_RUNON, 2, "On only when run");
+	    MenuItem m1i2 = sm1.add(0, DistObs.SCHEDULE_ACCHARGINGON, 2, "On when AC charging");
+	    MenuItem m1i3 = sm1.add(0, DistObs.SCHEDULE_RUNON, 3, "On only when run");
 	    m1i0.setCheckable(true);
 	    m1i1.setCheckable(true);
 	    m1i2.setCheckable(true);
+	    m1i3.setCheckable(true);
 	    switch (DistObs.getScheduleOptions(this)) {
 	    case DistObs.SCHEDULE_ALWAYSON:
 	    	m1i0.setChecked(true);
@@ -301,8 +321,11 @@ public class DataAcq extends Activity {
 	    case DistObs.SCHEDULE_CHARGINGON:
 	    	m1i1.setChecked(true);
 	    	break;
-	    case DistObs.SCHEDULE_RUNON:
+	    case DistObs.SCHEDULE_ACCHARGINGON:
 	    	m1i2.setChecked(true);
+	    	break;
+	    case DistObs.SCHEDULE_RUNON:
+	    	m1i3.setChecked(true);
 	    	break;
 	    }
 	    sm1.setGroupCheckable(0, true, true);  // must be placed after setting other stuff
@@ -339,6 +362,10 @@ public class DataAcq extends Activity {
 	    	DistObs.setScheduleOptions(this, DistObs.SCHEDULE_CHARGINGON);
 	    	item.setChecked(true);
 	        return true;
+	    case DistObs.SCHEDULE_ACCHARGINGON:
+	    	DistObs.setScheduleOptions(this, DistObs.SCHEDULE_ACCHARGINGON);
+	    	item.setChecked(true);
+	        return true;
 	    case DistObs.SCHEDULE_RUNON:
 	    	DistObs.setScheduleOptions(this, DistObs.SCHEDULE_RUNON);
 	    	item.setChecked(true);
@@ -352,7 +379,7 @@ public class DataAcq extends Activity {
 	    	DistObs.setDisplayOptions(this, DistObs.DISPLAY_NONE);
 	    	return true;
 	    case MENU_QUIT:
-	    	ml.finish();
+	    	finish();
 	        return true;
 	    }
 	    return false;

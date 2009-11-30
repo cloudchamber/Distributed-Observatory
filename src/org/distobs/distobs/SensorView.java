@@ -37,6 +37,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.hardware.Camera.ErrorCallback;
 import android.hardware.Camera.PictureCallback;
 import android.location.Location;
 import android.location.LocationListener;
@@ -273,7 +274,7 @@ public class SensorView extends SurfaceView {
 
         // Gets sequence ID
         Calendar c = Calendar.getInstance();
-        lastEventData.seqIDstr = String.format("%04d%02d%02dT%02d%02d%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH), 
+        lastEventData.seqIDstr = String.format("%04d%02d%02dT%02d%02d%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH)+1, 
         		c.get(Calendar.DAY_OF_MONTH), c.get(Calendar.HOUR), 
         		c.get(Calendar.MINUTE), c.get(Calendar.SECOND));
         eventData.picNum = 0;
@@ -292,6 +293,7 @@ public class SensorView extends SurfaceView {
     	
     	try {
     		c = Camera.open();
+    		c.setErrorCallback(errorCallback);
         } catch (RuntimeException e) {
 			Log.v(TAG, "Error initializing camera (runtime)");
 			e.printStackTrace();
@@ -403,6 +405,14 @@ public class SensorView extends SurfaceView {
     }
     
     
+    ErrorCallback errorCallback = new ErrorCallback() {
+    	public void onError(int error, Camera camera) {
+    		Log.v(TAG, "Camera error!! " + error);
+    		finish();
+    	}
+    };
+    
+    
 	/**
 	 * Moves old picture data to lastPic.  Gets new picture data.
 	 * 
@@ -450,6 +460,8 @@ public class SensorView extends SurfaceView {
 				if (sumColor(bm.getPixel(x, y))>fastFilterThreshold) {
 					Log.v(TAG, "ff="+bm.getPixel(x,y)+","+Color.alpha(bm.getPixel(x,y))+","+Color.red(bm.getPixel(x,y))+","+Color.green(bm.getPixel(x, y))+","+Color.blue(bm.getPixel(x, y)));
 					numNonZero++;
+					if (numNonZero>=fastFilterMaxPix)
+						break;
 				}
 			}
 		}

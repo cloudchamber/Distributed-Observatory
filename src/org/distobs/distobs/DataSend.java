@@ -24,10 +24,8 @@ import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -39,6 +37,15 @@ import android.util.Log;
 
 /**
  * 
+ * 
+ * Data formating:
+ * It is expected that the data format will change with new versions of the client 
+ * software.  Thus, during data upload, the client transmits the version of the 
+ * software.
+ * 
+ * Format v0.1
+ * seqIDstr, 		picNum,		picStartTime,	picFinishTime, 	gpsFixTime,		gpsLatitude,	gpsLongitude,	gpsAltitude,	networkFixTime,		networkLatitude, 	networkLongitude, 	accx, 	accy,	accz, 	magx,	magy,	magz,	temp
+ * 20090921T002100, 23, 		12341983274, 	12341983999, 	12341000000, 	37.1324, 		-142.1412, 		0,				12341000000, 		37.2,				-142.2,				9.81, 	0,		0,		1, 		0,		0,		37
  * @author kenny
  *
  */
@@ -200,7 +207,6 @@ public class DataSend extends Thread {
 	 * @return 	True on successful transfer.  False otherwise.
 	 * 
 	 * TODO: clean up
-	 * TODO: reduce memory footprint
 	 */
 	private boolean transferFile(String filename) {
 		HttpURLConnection conn = null;

@@ -22,6 +22,8 @@ package org.distobs.distobs;
 
 import java.io.File;
 
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -31,8 +33,10 @@ import android.content.SharedPreferences;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.wifi.WifiManager;
+import android.os.BatteryManager;
 import android.os.Environment;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.util.Log;
 
 
@@ -45,50 +49,71 @@ import android.util.Log;
  * The Distributed Observatory service monitors various aspects on the phone's state (network connectivity, 
  * battery charging, etc...), and performs appropriate actions (data acquistion, data transfer, etc...).
  *
- *
- * Data formating:
- * It is expected that the data format will change with new versions of the client 
- * software.  Thus, during data upload, the client transmits the version of the 
- * software.
- * 
- * Format v0.1
- * seqIDstr, 		picNum,		picStartTime,	picFinishTime, 	gpsFixTime,		gpsLatitude,	gpsLongitude,	gpsAltitude,	networkFixTime,		networkLatitude, 	networkLongitude, 	accx, 	accy,	accz, 	magx,	magy,	magz,	temp
- * 20090921T002100, 23, 		12341983274, 	12341983999, 	12341000000, 	37.1324, 		-142.1412, 		0,				12341000000, 		37.2,				-142.2,				9.81, 	0,		0,		1, 		0,		0,		37
- *
- *
- *
- *
  * TODO:
- * 0) (fixed?) At some point (not too long ago) the uploads started being 0 bytes!
- * 1) Taking a picture still causes occasional crashes on the G1 and frequent crashes in the emulator.
- * 2) Generalize some of the hard-coded parameters (i.e. pic size) so it works on more cameras 
- * 3) (fixed?) implement options menu options
- * 4) spruce up data display
- * 5) figure out security/privacy/anti-cheating measures
+ * 1) Generalize some of the hard-coded parameters (i.e. pic size) so it works on more cameras
+ * 2) Make display show tick marks for events. 
+ * 3) figure out security/anti-cheating measures
  */
 
 public class DistObs extends Service {
 
+	private AlarmManager am;
 	private static final String TAG = "DistObsService";	
 	private static final String CONFIG_FILENAME = "configFile";	
 
 	public static final int SCHEDULE_ALWAYSON = 0;
 	public static final int SCHEDULE_CHARGINGON = 1;
-	public static final int SCHEDULE_RUNON = 2;	
-	public static final int DISPLAY_DATA = 3;
-	public static final int DISPLAY_NONE = 4;
-
+	public static final int SCHEDULE_ACCHARGINGON = 2;
+	public static final int SCHEDULE_RUNON = 3;	
+	public static final int DISPLAY_DATA = 4;
+	public static final int DISPLAY_NONE = 5;
 	
-	private static long waitTimeAfterStart = 0; //6000; // ms
-	private static long waitTimeAfterPlugged = 0; //2000; // ms
+	private static long waitTimeAfterStart = 60000; // ms
+	private static long waitTimeAfterPlugged = 2000; // ms
 	
 	public boolean isActivityRunning = false;
+	public boolean hourlyAlarm = false;
 	private long serviceStartTime = 0;
 	private DataSend ds;
 
 	
 	/**
-	 * 
+	 * Persistently stores total number of events
+	 *  
+	 * @param c
+	 * @param opts
+	 */
+	public static void setNumEventsAndSamples(Context c, int numEvents, int numSamples) {
+		SharedPreferences.Editor editor = c.getSharedPreferences(CONFIG_FILENAME, 0).edit();
+		editor.putInt("NumEvents", numEvents);
+		editor.putInt("NumSamples", numSamples);
+		editor.commit();
+	}
+
+	/**
+	 * Gets total number of cosmic ray events
+	 * @param c
+	 * @return
+	 */
+	public static int getNumEvents(Context c) {
+		SharedPreferences settings = c.getSharedPreferences(CONFIG_FILENAME, 0);
+		return settings.getInt("NumEvents", 0);
+	}
+
+	/**
+	 * Gets total number of pictures taken
+	 * @param c
+	 * @return
+	 */
+	public static int getNumSamples(Context c) {
+		SharedPreferences settings = c.getSharedPreferences(CONFIG_FILENAME, 0);
+		return settings.getInt("NumSamples", 0);
+	}
+	
+
+	/**
+	 * Stores the option for when to start the application in persistent storage.
+	 *  
 	 * @param c
 	 * @param opts
 	 */
@@ -100,6 +125,7 @@ public class DistObs extends Service {
 	
 	
 	/**
+	 * Gets the option for when to start from persistent storage (assumes "On When Charging" by default)
 	 * 
 	 * @param c
 	 * @return
@@ -115,6 +141,7 @@ public class DistObs extends Service {
 	
 	
 	/**
+	 * Stores the option for what to display in persistent storage.
 	 * 
 	 * @param c
 	 * @param opts
@@ -127,19 +154,18 @@ public class DistObs extends Service {
 	
 	
 	/**
-	 * 
+	 * Gets the option for what to display from persistent storage (assumes "Display nothing" by default)
 	 * @param c
 	 * @return
 	 */
 	public static int getDisplayOptions(Context c) {
 		SharedPreferences settings = c.getSharedPreferences(CONFIG_FILENAME, 0);
-		return settings.getInt("DisplayOption", DISPLAY_NONE);
+		return settings.getInt("DisplayOption", DISPLAY_DATA);
 	}
 	
 	public int getDisplayOptions() {
 		return getDisplayOptions(this);
 	}
-	
 	
 	
     /**
@@ -162,7 +188,6 @@ public class DistObs extends Service {
     public static int getID(Context c) {
 		SharedPreferences settings = c.getSharedPreferences(CONFIG_FILENAME, 0);
 		return settings.getInt("ID", -1);
-
 /*    	try {
 			Log.v(TAG, "trying to open config");
 			BufferedReader br = new BufferedReader(new InputStreamReader(c.openFileInput("config")));
@@ -178,8 +203,6 @@ public class DistObs extends Service {
 		}    		
 		
     	return -1;*/
-    	
-    	
     }
     
     public int getID() {
@@ -197,6 +220,7 @@ public class DistObs extends Service {
     	setID(this, id);
     }
 
+    
 	/**
 	 * Starts the camera/data acquisition. (Non-blocking)
 	 * Does nothing if it is already started (FLAG_ACTIVITY_NEW_TASK)
@@ -208,6 +232,22 @@ public class DistObs extends Service {
 		isActivityRunning = true;
 	}
 	
+	
+	/**
+	 * Starts the camera/data acquisition only after a fixed time past startup and a fixed time past the command.
+	 */
+	public void startDataAcqWithWait() {
+		// wait at least a minute after startup before starting data acq.
+		// Wait a fixed amount of time before starting data acquisition.
+		try {
+			Thread.sleep(Math.max(waitTimeAfterPlugged, waitTimeAfterStart-(System.currentTimeMillis()-serviceStartTime)));
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}				
+		
+		startDataAcq();
+	}
+
 	
 	/**
 	 * Stops the camera from taking pictures. (Non-blocking)
@@ -224,33 +264,56 @@ public class DistObs extends Service {
      * stops data acquisition.
      */
 	BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
-		private static final String TAG = "BatteryReceiver";	
+		private static final String TAG = "BatteryReceiver";
 		
 		public void onReceive(Context context, Intent intent) {
 			int scheduleOpt = getScheduleOptions();
-			Log.v(TAG, "scheduleOpt = "+scheduleOpt);
-			if ( intent.getIntExtra("plugged", -1) > 0 ) {
-				Log.v(TAG, "Plugged");
-				if ( scheduleOpt == SCHEDULE_ALWAYSON || scheduleOpt == SCHEDULE_CHARGINGON) {
-					// wait at least a minute after startup before a "plugged" signal
-					// starts data acq.
-					if (System.currentTimeMillis()-serviceStartTime > waitTimeAfterStart) {
-						// Wait a fixed amount of time before starting data acquisition.
-						try {
-							Thread.sleep(waitTimeAfterPlugged);
-						} catch (InterruptedException e) {
-							e.printStackTrace();
-						}				
-						
-						startDataAcq();
-					}
-				}
+			int level = intent.getIntExtra("level", -1);
+			int plugged = intent.getIntExtra("plugged", -1);
+			
+			Log.v(TAG, "scheduleOpt = "+scheduleOpt + " status="+intent.getIntExtra("status", -1));
+			Log.v(TAG, "level="+level);
+			Log.v(TAG, "plugged="+plugged);
+			Log.v(TAG, "activityRunning="+isActivityRunning+" hourly alarm="+hourlyAlarm);
+			
+			
+			if ( isActivityRunning && level<30 ) {
+				// stop acquisition if it was started by service and battery is low
+				Log.v(TAG, "battery level low, stopping acq.");
+				stopDataAcq();
 			}
-			else {
-				Log.v(TAG, "Unplugged");
-				if ( scheduleOpt == SCHEDULE_CHARGINGON)
-					stopDataAcq();				
-			}			 
+			else if ( isActivityRunning && plugged<1 
+					&& (scheduleOpt == SCHEDULE_CHARGINGON || scheduleOpt == SCHEDULE_ACCHARGINGON) ) {
+				// stop acquisition if it was started by service, phone is unplugged, and configured for charging 
+				Log.v(TAG, "phone unplugged, stopping acq.");
+				stopDataAcq();
+			}
+			else if ( isActivityRunning && plugged!=BatteryManager.BATTERY_PLUGGED_AC
+					&& scheduleOpt==SCHEDULE_ACCHARGINGON) {
+				// stop acquisition if it was started by service, phone is unplugged from AC, and configured for AC charging
+				Log.v(TAG, "phone unplugged from AC, stopping acq.");
+				stopDataAcq();
+			}
+			else if ( (hourlyAlarm || !isActivityRunning) && level>40 
+					&& scheduleOpt==SCHEDULE_ALWAYSON ) {
+				// start acquisition if it was stopped by service (or never started or hourly alarm triggered), phone is >40%
+				Log.v(TAG, "always on, starting acq.");
+				startDataAcqWithWait();				
+			}
+			else if ( (hourlyAlarm || !isActivityRunning) && level>40 && plugged>=1 
+					&& scheduleOpt==SCHEDULE_CHARGINGON ) {
+				// start acquisition if it was stopped by service (or never started or hourly alarm triggered), phone is charging (and >40%), and configured for charging
+				Log.v(TAG, "charging, starting acq.");
+				startDataAcqWithWait();
+			}
+			else if ( (hourlyAlarm || !isActivityRunning) && level>40 && plugged==BatteryManager.BATTERY_PLUGGED_AC
+					&& scheduleOpt==SCHEDULE_ACCHARGINGON ) {
+				// start acquisition if it was stopped by service (or never started or hourly alarm triggered), phone is AC charging (and >40%), and configured for AC charging
+				Log.v(TAG, "AC charging, starting acq.");
+				startDataAcqWithWait();
+			}
+			
+			hourlyAlarm = false;
 		}
 	};
 
@@ -281,6 +344,19 @@ public class DistObs extends Service {
 		}
 	};
 
+	
+	/**
+	 * Listens for hourly alarm.
+	 */
+	BroadcastReceiver alarmReceiver = new BroadcastReceiver() {
+		private static final String TAG = "AlarmReceiver";	
+		
+		public void onReceive(Context context, Intent intent) {
+			Log.v(TAG, "hourly ALARM");
+			hourlyAlarm = true;
+		}
+	};
+
 		
 	/**
 	 * At the moment, nothing binds to this service.
@@ -296,8 +372,7 @@ public class DistObs extends Service {
 	 */
 	@Override
 	public void onStart(Intent intent, int startId) {
-		super.onStart(intent, startId);
-		
+		super.onStart(intent, startId);		
 		Log.v(TAG, "Distributed observatory service started");
 	}
 
@@ -312,11 +387,17 @@ public class DistObs extends Service {
 		
 		serviceStartTime = System.currentTimeMillis();
 		
+		am = (AlarmManager)this.getSystemService(Context.ALARM_SERVICE);
+		am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime(), 
+				AlarmManager.INTERVAL_HOUR, 
+				PendingIntent.getBroadcast(DistObs.this, 0, new Intent("HOURLY_ALARM"), 0));
+		
 		registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
 		registerReceiver(networkReceiver, new IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION));
+		registerReceiver(alarmReceiver, new IntentFilter("HOURLY_ALARM"));
 		
 		ds = new DataSend(this);		
-		
+
 		if (getScheduleOptions() == SCHEDULE_ALWAYSON)
 			startDataAcq();		
 	}
@@ -332,6 +413,7 @@ public class DistObs extends Service {
 		
 		unregisterReceiver(batteryReceiver);
 		unregisterReceiver(networkReceiver);
+		unregisterReceiver(alarmReceiver);
 		
 		ds = null;
 	}
